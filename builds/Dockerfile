@@ -1,6 +1,4 @@
-FROM golang:alpine as builder
-
-RUN apk update && apk upgrade && apk add --no-cache git
+FROM golang:latest as builder
 
 RUN mkdir -p /github.com/safe-area/range-info
 WORKDIR /github.com/safe-area/range-info
@@ -10,11 +8,12 @@ ENV GO111MODULE=on
 COPY . .
 
 RUN go mod download
-RUN CGO_ENABLED=0 GOOS=linux go build -o app ./main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -o app ./main.go
 
 
 FROM alpine:latest
 
+RUN apk add --no-cache libc6-compat
 RUN apk --no-cache add ca-certificates
 
 RUN mkdir /app
