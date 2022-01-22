@@ -42,13 +42,28 @@ func (s *Server) TestHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params)
 	var geoData models.GeoData
 	err := jsoniter.Unmarshal(body, &geoData)
 	if err != nil {
-		logrus.Warnf("HandleLastStatusOfRids error while unmarshalling request: %s", err)
+		logrus.Errorf("TestHandler: error while unmarshalling request: %s", err)
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		return
 	}
 	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, 12)
-	logrus.Infof("Timestamp: %v, Coordinats: (%v,%v), HexIndex(res: 12): %v", time.Unix(geoData.Timestamp, 0),
+	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v\033[0m\n", time.Unix(geoData.Timestamp, 0),
 		geoData.Latitude, geoData.Longitude, index)
+	gj, err := getGeoJson(map[h3.H3Index]models.HexProperties{
+		index: {
+			Healthy:    20,
+			Suspicious: 3,
+			Infected:   1,
+		},
+	})
+	if err != nil {
+		logrus.Errorf("TestHandler: error while marshalling geojson: %s", err)
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		return
+	}
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.Write(gj)
 }
 
 func (s *Server) Start() error {
@@ -56,4 +71,28 @@ func (s *Server) Start() error {
 }
 func (s *Server) Shutdown() error {
 	return s.serv.Shutdown()
+}
+
+func getGeoJson(m map[h3.H3Index]models.HexProperties) ([]byte, error) {
+	features := make([]map[string]interface{}, 0, len(m))
+	for k, v := range m {
+		gb := h3.ToGeoBoundary(k)
+		gbSlices := make([][][]float64, 1)
+		for _, g := range gb {
+			gbSlices[0] = append(gbSlices[0], []float64{g.Latitude, g.Longitude})
+		}
+		feature := make(map[string]interface{})
+		feature["type"] = "Feature"
+		feature["geometry"] = map[string]interface{}{
+			"type":        "Polygon",
+			"coordinates": gbSlices,
+		}
+		feature["properties"] = v
+		features = append(features, feature)
+	}
+	geoJsonStruct := map[string]interface{}{
+		"type":     "FeatureCollection",
+		"features": features,
+	}
+	return jsoniter.Marshal(geoJsonStruct)
 }

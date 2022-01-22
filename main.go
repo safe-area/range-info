@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	server := api.New(":80")
+	server := api.New(":8080")
 
 	errChan := make(chan error, 1)
 	signalChan := make(chan os.Signal, 1)

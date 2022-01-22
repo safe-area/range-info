@@ -5,3 +5,9 @@ type GeoData struct {
 	Longitude float64 `json:"longitude"`
 	Timestamp int64   `json:"time"`
 }
+
+type HexProperties struct {
+	Healthy    int `json:"healthy"`
+	Suspicious int `json:"suspicious"`
+	Infected   int `json:"infected"`
+}
