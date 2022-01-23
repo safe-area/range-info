@@ -9,6 +9,7 @@ import (
 	"github.com/uber/h3-go"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttprouter"
+	"math/rand"
 	"time"
 )
 
@@ -49,13 +50,13 @@ func (s *Server) TestHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params)
 	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, 12)
 	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v\033[0m\n", time.Unix(geoData.Timestamp, 0),
 		geoData.Latitude, geoData.Longitude, index)
-	ring := h3.KRing(index, 5)
+	ring := h3.KRing(index, 4)
 	hexMap := make(map[h3.H3Index]models.HexProperties, len(ring))
 	for _, v := range ring {
 		hexMap[v] = models.HexProperties{
-			Healthy:    20,
-			Suspicious: 3,
-			Infected:   1,
+			Healthy:    rand.Intn(30),
+			Suspicious: rand.Intn(4),
+			Infected:   rand.Intn(2),
 		}
 	}
 	gj, err := getGeoJson(hexMap)
@@ -91,7 +92,40 @@ func getGeoJson(m map[h3.H3Index]models.HexProperties) ([]byte, error) {
 			"type":        "Polygon",
 			"coordinates": gbSlices,
 		}
-		feature["properties"] = v
+		var color string
+		var opacity float64
+		if v.Infected != 0 {
+			color = "red"
+			opacity = 4 * float64(v.Infected) / float64(v.Healthy+v.Suspicious+v.Infected)
+			if opacity > 0.8 {
+				opacity = 0.8
+			}
+		} else if v.Suspicious != 0 {
+			color = "yellow"
+			opacity = 2 * float64(v.Suspicious) / float64(v.Healthy+v.Suspicious+v.Infected)
+			if opacity > 0.8 {
+				opacity = 0.8
+			}
+		} else if v.Healthy != 0 {
+			color = "green"
+			opacity = 0.5
+		} else {
+			color = "white"
+			opacity = 0.0
+		}
+		feature["properties"] = map[string]interface{}{
+			"healthy":      v.Healthy,
+			"suspicious":   v.Suspicious,
+			"infected":     v.Infected,
+			"fill":         color,
+			"stroke-width": "1",
+			"fill-opacity": opacity,
+		}
+		//feature["style"] = map[string]interface{}{
+		//	"fill":         color,
+		//	"stroke-width": "1",
+		//	"fill-opacity": opacity,
+		//}
 		features = append(features, feature)
 	}
 	geoJsonStruct := map[string]interface{}{
