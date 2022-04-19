@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/safe-area/range-info/config"
 	"github.com/safe-area/range-info/internal/api"
 	"github.com/sirupsen/logrus"
 	"os"
@@ -10,7 +11,12 @@ import (
 )
 
 func main() {
-	server := api.New(":8080")
+	cfg, err := config.ParseConfig("./config/config.json")
+	if err != nil {
+		logrus.Fatalf("parse config error: %v", err)
+	}
+
+	server := api.New(cfg)
 
 	errChan := make(chan error, 1)
 	signalChan := make(chan os.Signal, 1)

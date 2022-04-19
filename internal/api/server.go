@@ -1,25 +1,29 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/lab259/cors"
+	"github.com/safe-area/range-info/config"
 	"github.com/safe-area/range-info/internal/models"
 	"github.com/sirupsen/logrus"
 	"github.com/uber/h3-go"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttprouter"
 	"math/rand"
+	"net/http"
 	"time"
 )
 
 type Server struct {
-	r    *fasthttprouter.Router
-	serv *fasthttp.Server
-	port string
+	r          *fasthttprouter.Router
+	serv       *fasthttp.Server
+	httpClient *fasthttp.Client
+	cfg        *config.Config
 }
 
-func New(port string) *Server {
+func New(cfg *config.Config) *Server {
 	innerRouter := fasthttprouter.New()
 	innerHandler := innerRouter.Handler
 	s := &Server{
@@ -30,47 +34,15 @@ func New(port string) *Server {
 			IdleTimeout:  time.Duration(600) * time.Second,
 			Handler:      cors.AllowAll().Handler(innerHandler),
 		},
-		port,
+		new(fasthttp.Client),
+		cfg,
 	}
 
-	s.r.POST("/api/v1/test", s.TestHandler)
 	s.r.POST("/api/v1/range", s.RangeHandler)
 	s.r.POST("/api/v1/area", s.AreaHandler)
-	//s.r.POST("/api/v1/trace", s.AreaHandler)
+	//s.r.POST("/api/v1/trace", s.TraceHandler)
 
 	return s
-}
-
-func (s *Server) TestHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params) {
-	body := ctx.PostBody()
-	var geoData models.GeoData
-	err := jsoniter.Unmarshal(body, &geoData)
-	if err != nil {
-		logrus.Errorf("TestHandler: error while unmarshalling request: %s", err)
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		return
-	}
-	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, models.HexResolution)
-	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v(%v)\033[0m\n", time.Unix(geoData.Timestamp, 0),
-		geoData.Latitude, geoData.Longitude, index, h3.BaseCell(index))
-	ring := h3.KRing(index, 2)
-	hexMap := make(map[h3.H3Index]models.HexProperties, len(ring))
-	for _, v := range ring {
-		hexMap[v] = models.HexProperties{
-			Healthy:    rand.Intn(30),
-			Suspicious: rand.Intn(4),
-			Infected:   rand.Intn(2),
-		}
-	}
-	gj, err := getGeoJson(hexMap)
-	if err != nil {
-		logrus.Errorf("TestHandler: error while marshalling geojson: %s", err)
-		ctx.SetStatusCode(fasthttp.StatusBadRequest)
-		return
-	}
-	ctx.SetContentType("application/json")
-	ctx.SetStatusCode(fasthttp.StatusOK)
-	ctx.Write(gj)
 }
 
 func (s *Server) RangeHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params) {
@@ -78,10 +50,36 @@ func (s *Server) RangeHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params
 	var geoData models.GeoData
 	err := jsoniter.Unmarshal(body, &geoData)
 	if err != nil {
-		logrus.Errorf("TestHandler: error while unmarshalling request: %s", err)
+		logrus.Errorf("RangeHandler: error while unmarshalling request: %s", err)
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		return
 	}
+
+	storeReq := make(map[h3.H3Index]models.HexData)
+	var storeReqBody []byte
+	storeReqBody, err = json.Marshal(storeReq)
+	if err != nil {
+		logrus.Error("RangeHandler: marshal error:", err)
+		return
+	}
+
+	httpReq := fasthttp.AcquireRequest()
+	httpResp := fasthttp.AcquireResponse()
+	httpReq.Header.SetMethod("GET")
+	httpReq.Header.SetContentType("application/json")
+	httpReq.SetRequestURI(s.cfg.Storage.Host + "/api/v1/get")
+	httpReq.SetBody(storeReqBody)
+	if err := s.httpClient.Do(httpReq, httpResp); err != nil {
+		logrus.Error("RangeHandler: Do request error", err)
+		return
+	}
+	if httpResp.StatusCode() != http.StatusOK {
+		logrus.Error("RangeHandler: status code:", httpResp.StatusCode())
+		return
+	}
+	fasthttp.ReleaseRequest(httpReq)
+	fasthttp.ReleaseResponse(httpResp)
+
 	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, models.HexResolution)
 	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v(%v)\033[0m\n", time.Unix(geoData.Timestamp, 0),
 		geoData.Latitude, geoData.Longitude, index, h3.BaseCell(index))
@@ -141,7 +139,7 @@ func (s *Server) AreaHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params)
 }
 
 func (s *Server) Start() error {
-	return fmt.Errorf("server start: %s", s.serv.ListenAndServe(s.port))
+	return fmt.Errorf("server start: %s", s.serv.ListenAndServe(s.cfg.Port))
 }
 func (s *Server) Shutdown() error {
 	return s.serv.Shutdown()
