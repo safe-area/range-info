@@ -25,15 +25,18 @@ func New(port string) *Server {
 	s := &Server{
 		innerRouter,
 		&fasthttp.Server{
-			ReadTimeout:  time.Duration(5) * time.Second,
-			WriteTimeout: time.Duration(5) * time.Second,
-			IdleTimeout:  time.Duration(5) * time.Second,
+			ReadTimeout:  time.Duration(600) * time.Second,
+			WriteTimeout: time.Duration(600) * time.Second,
+			IdleTimeout:  time.Duration(600) * time.Second,
 			Handler:      cors.AllowAll().Handler(innerHandler),
 		},
 		port,
 	}
 
 	s.r.POST("/api/v1/test", s.TestHandler)
+	s.r.POST("/api/v1/range", s.RangeHandler)
+	s.r.POST("/api/v1/area", s.AreaHandler)
+	//s.r.POST("/api/v1/trace", s.AreaHandler)
 
 	return s
 }
@@ -47,12 +50,79 @@ func (s *Server) TestHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params)
 		ctx.SetStatusCode(fasthttp.StatusBadRequest)
 		return
 	}
-	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, 12)
-	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v\033[0m\n", time.Unix(geoData.Timestamp, 0),
-		geoData.Latitude, geoData.Longitude, index)
-	ring := h3.KRing(index, 4)
+	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, models.HexResolution)
+	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v(%v)\033[0m\n", time.Unix(geoData.Timestamp, 0),
+		geoData.Latitude, geoData.Longitude, index, h3.BaseCell(index))
+	ring := h3.KRing(index, 2)
 	hexMap := make(map[h3.H3Index]models.HexProperties, len(ring))
 	for _, v := range ring {
+		hexMap[v] = models.HexProperties{
+			Healthy:    rand.Intn(30),
+			Suspicious: rand.Intn(4),
+			Infected:   rand.Intn(2),
+		}
+	}
+	gj, err := getGeoJson(hexMap)
+	if err != nil {
+		logrus.Errorf("TestHandler: error while marshalling geojson: %s", err)
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		return
+	}
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.Write(gj)
+}
+
+func (s *Server) RangeHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params) {
+	body := ctx.PostBody()
+	var geoData models.GeoData
+	err := jsoniter.Unmarshal(body, &geoData)
+	if err != nil {
+		logrus.Errorf("TestHandler: error while unmarshalling request: %s", err)
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		return
+	}
+	index := h3.FromGeo(h3.GeoCoord{Latitude: geoData.Latitude, Longitude: geoData.Longitude}, models.HexResolution)
+	fmt.Printf("\033[0;33mTimestamp: \033[4;35m\"%v\"\033[0;33m, Coordinats: \033[4;35m(%v,%v)\033[0;33m, HexIndex(res: 12): \033[4;35m%v(%v)\033[0m\n", time.Unix(geoData.Timestamp, 0),
+		geoData.Latitude, geoData.Longitude, index, h3.BaseCell(index))
+	ring := h3.KRing(index, 2)
+	hexMap := make(map[h3.H3Index]models.HexProperties, len(ring))
+	for _, v := range ring {
+		hexMap[v] = models.HexProperties{
+			Healthy:    rand.Intn(30),
+			Suspicious: rand.Intn(4),
+			Infected:   rand.Intn(2),
+		}
+	}
+	gj, err := getGeoJson(hexMap)
+	if err != nil {
+		logrus.Errorf("TestHandler: error while marshalling geojson: %s", err)
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		return
+	}
+	ctx.SetContentType("application/json")
+	ctx.SetStatusCode(fasthttp.StatusOK)
+	ctx.Write(gj)
+}
+
+func (s *Server) AreaHandler(ctx *fasthttp.RequestCtx, ps fasthttprouter.Params) {
+	body := ctx.PostBody()
+	var area models.Area
+	err := jsoniter.Unmarshal(body, &area)
+	if err != nil {
+		logrus.Errorf("TestHandler: error while unmarshalling request: %s", err)
+		ctx.SetStatusCode(fasthttp.StatusBadRequest)
+		return
+	}
+	polygon := h3.GeoPolygon{}
+	for _, p := range area.Polygon {
+		polygon.Geofence = append(polygon.Geofence, h3.GeoCoord{
+			Latitude: p.Latitude, Longitude: p.Longitude,
+		})
+	}
+	indexes := h3.Polyfill(polygon, models.HexResolution)
+	hexMap := make(map[h3.H3Index]models.HexProperties, len(indexes))
+	for _, v := range indexes {
 		hexMap[v] = models.HexProperties{
 			Healthy:    rand.Intn(30),
 			Suspicious: rand.Intn(4),

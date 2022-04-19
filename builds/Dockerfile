@@ -20,6 +20,6 @@ RUN mkdir /app
 WORKDIR /app
 COPY --from=builder /github.com/safe-area/range-info/app .
 
-EXPOSE 80
+EXPOSE 8080
 
 CMD ["./app"]
