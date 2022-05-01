@@ -1,7 +1,7 @@
 FROM golang:latest as builder
 
-RUN mkdir -p /github.com/safe-area/range-info
-WORKDIR /github.com/safe-area/range-info
+RUN mkdir /app
+WORKDIR /app
 
 ENV GO111MODULE=on
 
@@ -18,7 +18,7 @@ RUN apk --no-cache add ca-certificates
 
 RUN mkdir /app
 WORKDIR /app
-COPY --from=builder /github.com/safe-area/range-info/app .
+COPY --from=builder /app .
 
 EXPOSE 8080
 

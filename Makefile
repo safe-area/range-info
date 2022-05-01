@@ -1,7 +1,7 @@
 .PHONY: build
 build:
-	docker build -t poncheska/sa-test -f builds/Dockerfile .
-	docker push poncheska/sa-test
+	docker build -t poncheska/sa-data-getter -f builds/Dockerfile .
+	docker push poncheska/sa-data-getter
 
 .PHONY: run
 run:
