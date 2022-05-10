@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"github.com/safe-area/range-info/config"
 	"github.com/safe-area/range-info/internal/api"
 	"github.com/sirupsen/logrus"
@@ -26,7 +25,7 @@ func main() {
 		errChan <- server.Start()
 	}()
 
-	fmt.Println("server started")
+	logrus.Info("server started")
 	select {
 	case err := <-errChan:
 		if err != nil {
