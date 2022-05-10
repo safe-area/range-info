@@ -1,7 +1,7 @@
 {
   "port": ":8080",
   "storage": {
-    "host": "127.0.0.1:8081"
+    "host": "http://storage:8080"
   },
   "dev": true
 }

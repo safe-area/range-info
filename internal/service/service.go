@@ -73,7 +73,7 @@ func (s *service) getDataDev(ixs []h3.H3Index) (map[h3.H3Index]models.HexData, e
 		return nil, err
 	}
 	resp := make(map[h3.H3Index]models.HexData)
-	if err = jsoniter.Unmarshal(httpResp.Body(), resp); err != nil {
+	if err = jsoniter.Unmarshal(httpResp.Body(), &resp); err != nil {
 		logrus.Errorf("getDataDev: error while unmarshalling response: %s", err)
 		fasthttp.ReleaseRequest(httpReq)
 		fasthttp.ReleaseResponse(httpResp)
