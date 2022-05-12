@@ -10,7 +10,11 @@ type Config struct {
 	Storage struct {
 		Host string `json:"host"`
 	} `json:"storage"`
-	Dev bool `json:"dev"`
+	NATS struct {
+		URLs []string `json:"urls"`
+	} `json:"nats"`
+	Shards []int `json:"shards"`
+	Dev    bool  `json:"dev"`
 }
 
 func ParseConfig(configPath string) (*Config, error) {

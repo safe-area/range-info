@@ -1,28 +1,42 @@
 package service
 
 import (
+	"fmt"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/safe-area/range-info/config"
 	"github.com/safe-area/range-info/internal/models"
+	"github.com/safe-area/range-info/internal/nats_provider"
 	"github.com/sirupsen/logrus"
 	"github.com/uber/h3-go"
-	"github.com/valyala/fasthttp"
-	"net/http"
+)
+
+const (
+	shardTemplate = "GET_DATA_SHARD_"
+	defaultShard  = "GET_DATA_SHARD_DEFAULT"
 )
 
 type Service interface {
 	GetData(ixs []h3.H3Index) (map[h3.H3Index]models.HexData, error)
+	Prepare()
 }
 
 type service struct {
-	httpClient *fasthttp.Client
-	cfg        *config.Config
+	nats   *nats_provider.NATSProvider
+	shards map[int]string
+	cfg    *config.Config
 }
 
-func NewService(cfg *config.Config) Service {
+func NewService(cfg *config.Config, provider *nats_provider.NATSProvider) Service {
 	return &service{
-		httpClient: new(fasthttp.Client),
-		cfg:        cfg,
+		nats:   provider,
+		shards: make(map[int]string),
+		cfg:    cfg,
+	}
+}
+
+func (s *service) Prepare() {
+	for _, v := range s.cfg.Shards {
+		s.shards[v] = fmt.Sprint(shardTemplate, v)
 	}
 }
 
@@ -54,32 +68,25 @@ func (s *service) getDataDev(ixs []h3.H3Index) (map[h3.H3Index]models.HexData, e
 		return nil, err
 	}
 
-	httpReq := fasthttp.AcquireRequest()
-	httpResp := fasthttp.AcquireResponse()
-	httpReq.Header.SetMethod("GET")
-	httpReq.Header.SetContentType("application/json")
-	httpReq.SetRequestURI(s.cfg.Storage.Host + "/api/v1/get")
-	httpReq.SetBody(storeReqBody)
-	if err = s.httpClient.Do(httpReq, httpResp); err != nil {
-		logrus.Error("getDataDev: Do request error", err)
-		fasthttp.ReleaseRequest(httpReq)
-		fasthttp.ReleaseResponse(httpResp)
-		return nil, err
-	}
-	if httpResp.StatusCode() != http.StatusOK {
-		logrus.Error("getDataDev: status code:", httpResp.StatusCode())
-		fasthttp.ReleaseRequest(httpReq)
-		fasthttp.ReleaseResponse(httpResp)
+	// TODO SHARDS
+	subj := defaultShard
+	msg, err := s.nats.Request(subj, storeReqBody)
+	if err != nil {
+		logrus.Errorf("sendToShard: nats request error: %s", err)
 		return nil, err
 	}
 	resp := make(map[h3.H3Index]models.HexData)
-	if err = jsoniter.Unmarshal(httpResp.Body(), &resp); err != nil {
+	if err = jsoniter.Unmarshal(msg.Data, &resp); err != nil {
 		logrus.Errorf("getDataDev: error while unmarshalling response: %s", err)
-		fasthttp.ReleaseRequest(httpReq)
-		fasthttp.ReleaseResponse(httpResp)
 		return nil, err
 	}
-	fasthttp.ReleaseRequest(httpReq)
-	fasthttp.ReleaseResponse(httpResp)
 	return resp, nil
+}
+
+func (s *service) getSubj(hex int) string {
+	if v, ok := s.shards[hex]; ok {
+		return v
+	} else {
+		return defaultShard
+	}
 }

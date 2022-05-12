@@ -3,5 +3,10 @@
   "storage": {
     "host": "http://storage:8080"
   },
+  "nats": {
+    "urls": [
+      "nats:4222"
+    ]
+  },
   "dev": true
 }

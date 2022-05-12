@@ -3,6 +3,8 @@ package main
 import (
 	"github.com/safe-area/range-info/config"
 	"github.com/safe-area/range-info/internal/api"
+	"github.com/safe-area/range-info/internal/nats_provider"
+	"github.com/safe-area/range-info/internal/service"
 	"github.com/sirupsen/logrus"
 	"os"
 	"os/signal"
@@ -15,7 +17,12 @@ func main() {
 		logrus.Fatalf("parse config error: %v", err)
 	}
 
-	server := api.New(cfg)
+	provider := nats_provider.New(cfg.NATS.URLs)
+
+	svc := service.NewService(cfg, provider)
+	svc.Prepare()
+
+	server := api.New(cfg, svc)
 
 	errChan := make(chan error, 1)
 	signalChan := make(chan os.Signal, 1)

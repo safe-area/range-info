@@ -21,7 +21,7 @@ type Server struct {
 	cfg  *config.Config
 }
 
-func New(cfg *config.Config) *Server {
+func New(cfg *config.Config, svc service.Service) *Server {
 	innerRouter := fasthttprouter.New()
 	innerHandler := innerRouter.Handler
 	s := &Server{
@@ -32,7 +32,7 @@ func New(cfg *config.Config) *Server {
 			IdleTimeout:  time.Duration(600) * time.Second,
 			Handler:      cors.AllowAll().Handler(innerHandler),
 		},
-		service.NewService(cfg),
+		svc,
 		cfg,
 	}
 
